@@ -32,56 +32,104 @@ So anything that unlocks "at 08:00 in game" unlocks at 08:00 in Lagos (07:00 UTC
 Other money facts: weekly rent is ₦6,000, due Saturday. Income tax is 0% on the first ₦1,000,000 of pay per week.
 The first page shows ₦47,550 balance, ₦63,100 earned today and a net worth of ₦119k.
 
-So there are **two free, schedulable tasks**: the weekday **job shift** and the **daily gem hunt**.
+Free schedulable tasks: the weekday **job shift**, the **daily gem hunt**, and the **gigs** below. The gigs are the main repeatable income.
 
-## Proposed skill: `lagoslife-free-tasks`
+## Gigs (added after your feedback): the main repeatable income
 
-`.claude/skills/lagoslife-free-tasks/` containing:
+These are timed actions on objects or at venues. Pay depends on skill. ricky's skills are **Coding 10, Hustle 10, Fitness 10**, Charisma 4.9 and Music 3.
 
-- `SKILL.md`: when to use it, the guardrails below, and how to run each mode.
-- `scripts/lagoslife.js`: a Playwright script with two modes:
-  - `--mode gem`
-    1. Log in from the env vars and press **Continue**.
-    2. Call `GET /api/hunt`. If `mine` is already set, exit with "already found".
-    3. Otherwise, print the clue and the venue list. Claude matches the riddle to a venue, which needs judgement because clues are riddles.
-    4. Move the sim there with **Map → venue** (walking on the free road, never a paid Ride).
-    5. Poll until `here: true`, then press the gem claim button.
-    6. Report the rank and reward.
-  - `--mode shift`
-    1. Log in and press **Continue**.
-    2. Check that it's a work day, the shift isn't already done, and "Go automatically" is on.
-    3. Keep the page open until the game starts the shift and the 60-minute shift finishes. Max 75 minutes.
-    4. Report the pay from the in-game notice and the Bank screen.
-- `scripts/launch-chromium.js`: the browser launcher from this exploration (`launch-chromium.js` here). In this sandbox, Chromium only trusts the proxy's interception CA through an SPKI pin. Normal certificate checks stay on.
+**How the timing works (from the game code):**
+- An action finishes in **seconds of real time**. The menu shows it, e.g. "24s".
+- When it finishes, it **pays and then rests for 20 real minutes**: `gigRest = now + 20 min`, or 45 minutes if it paid ₦10k or more. The card shows "Back in N min ⏳" until then.
+- Every gig has its **own** rest timer, so all of them can run in the same 20-minute cycle.
+- Only `pitch`, `hackathon`, `atmHack` and `fakeBags` are **once a day**. They reset at midnight Lagos time.
 
-### Guardrails (enforced in code, not just in the prompt)
+| Gig | Where / how | Open | Takes | Pays (ricky) | Cost | Rest |
+|---|---|---|---|---|---|---|
+| **Freelance Gig** 💸 | Home → tap the **Laptop Desk** | always | ~24 s | **₦6,200** (600 + 560 × coding) | free (−Fun) | 20 min |
+| **Run Instagram Shop** 🛍️ | Home → **Laptop Desk** | always | ~14 s | **₦2,960** (160 + 280 × hustle) | free | 20 min |
+| **WhatsApp Hustle** 💬 | Tap your character (works anywhere) | always | ~11 s | **₦1,900** (100 + 180 × hustle) | free | 20 min |
+| **Freelance Gig** 🧾 | **CcHub** → Hot desks | **08:00–23:00** | ~16 s | **₦3,400** (400 + 300 × coding) | free (−Fun) | 20 min |
+| **Pitch Your Startup** 🚀 | **CcHub** → Event stage | 08:00–23:00 | ~8 s | about a **50% chance of ₦100k / 250k / 500k / 1M**. Expected value is about ₦160k/day. | free | **once a day** |
+| **Buy & Resell Goods** 📦 | **Balogun** → Wholesale depot | always | ~16 s | ₦4,250–5,250 back, so **about ₦3.5–4.5k profit** | **₦800 stake** | 20 min |
+| **Carry Load (Alabaru)** 🧺 | **Balogun** → Loading bay | always | ~16 s | **₦900** | free (−Energy, −Hygiene) | 20 min |
+| Report a Crime 📝 | Eko Police Division | 24 h | ~4 s | ₦2,000 | free | 20 min |
 
-- **Request allowlist.** `page.route` aborts any non-GET request except:
+Other paying actions that pay less at your skill levels:
+- Write a Banger: ₦2,300
+- Paid Beach Photoshoot (Elegushi): ₦2,200
+- Open Mic (Shrine): ₦1,720
+- Comedy Night (Freedom Park): ₦1,600
+- Paid Skit and Edit Photos: these need electricity
+
+**Travel:** Phone → **Ride** → pick a venue → choose a mode. **Trek is free**; Keke, Danfo, Okada and Cab cost ₦100–₦450.
+The panel **preselects Danfo**, so the script has to pick Trek on purpose.
+Balogun isn't on the 3D map's buttons, so it can only be reached through Ride.
+
+**Needs:** gigs drain Fun, Energy and Hygiene. If needs get low, the sim gets unhappy and may refuse or slow down.
+The loop should top them up with free actions at home: sleep, bucket bath, toilet, Scroll Naija Twitter, Sing.
+
+**Rough income per hour** if every free gig runs about 3 times an hour:
+- At home only (Freelance + IG + WhatsApp): about **₦33k/hour**
+- Adding the CcHub freelance gig: about **₦43k/hour**, less travel time
+- Pay above **₦1M a week is taxed** at 20%. Bets, sales and gifts are not taxed.
+
+**Everything runs in the browser:** the page computes progress and pay, then saves to `/api/save`. So the page has to stay open while a gig runs, but only for seconds at a time.
+
+
+## Proposed skill: `lagoslife-free-tasks` (v2)
+
+The script is `scripts/lagoslife.js`. It's plain Node and Playwright with no model calls in the loop, so a run uses very few tokens.
+
+### Modes
+
+**`--mode gigs --minutes 55`** (the main one)
+1. Log in and press Continue.
+2. Read `gigRest` from the save to know which gigs are ready.
+3. Loop until the time is up. On each pass:
+   - At home: run Laptop → Freelance Gig, then Laptop → Run Instagram Shop, then tap the character → WhatsApp Hustle.
+   - If CcHub is open (08:00–23:00), trek there (free) and run Freelance Gig; on the first visit of the day, also run Pitch Your Startup.
+   - Optionally, trek to Balogun for Resell (₦800 stake) and Alabaru.
+   - Before each gig, check needs. If any is below 35, do the free home fix: sleep, bath, toilet or scroll.
+   - Then wait until the next timer ends.
+4. Report the ₦ earned and the gigs done.
+
+**`--mode gem`**: the daily gem hunt. Claude solves the clue, then the script treks there and claims.
+
+**`--mode shift`**: the weekday job shift, as described above.
+
+### Guardrails (enforced in code)
+- **Write allowlist.** Only these writes go through:
   - `/api/auth/login`
   - `/api/save`
   - `/api/world`
   - `/api/visit`
-  - `/api/family` with `{"action":"claim"}`, which the app sends by itself
+  - `/api/family {"action":"claim"}`, which the app sends by itself
   - `POST /api/hunt`
-- **Always blocked:**
-  - `/api/wallet/*`, `/api/ads` (POST), `/api/send`, `/api/bail`, `/api/sea`, `/api/gov/*`
-  - LagosBet and any buy, purchase or top-up flows
-- The script never clicks "Top up wallet", "Switch to this job", "Quit job", Buy, Ride or Chowdeck.
-- The password comes only from `LAGOSLIFE_PASSWORD`. It's never logged, and it's masked out of any page-text dumps.
-- The session cookie is written only to the run's temp directory, never to the repo.
+- **Blocked:** `/api/wallet/*`, `/api/send`, `/api/ads` (POST), `/api/bail`, `/api/sea`, `/api/gov/*`, `/api/squads`.
+- **Never clicked:**
+  - Top up wallet, Buy, Boutique, Houses, Cars, Invest, LagosBet, Chowdeck
+  - Any paid ride; the script always picks **Trek**
+  - Switch/Quit job
+  - Anything tagged as a crime (Pickpocket, Fake Bags, Hack an ATM)
+- **Spending:** the only spend the script may make is the ₦800 resell stake, and only with `--resell` on, with a daily cap.
+- **Secrets:** the password stays in the env var and is masked in all logs. The cookie stays in the run's temp directory.
 
 ## Proposed Routines
 
-Each Routine starts a fresh session in this same environment, which already has the `LAGOSLIFE_*` env vars:
+Each Routine starts a fresh session in this environment. All times are Lagos time.
 
-| Routine | Cron | Why |
+| Routine | Cron | Does |
 |---|---|---|
-| **Lagos Life gem hunt** | `CRON_TZ=Africa/Lagos 5 0 * * *` | Shortly after the gem resets at midnight. Earlier finders get a better rank, and possibly more pay. |
-| **Lagos Life work shift** | `CRON_TZ=Africa/Lagos 52 8 * * 1-5` | Inside the Mon–Fri 08:00–14:00 auto-work window for Teaching. |
+| **Gigs** | `CRON_TZ=Africa/Lagos 3 7-22 * * *` (hourly, 07:03–22:03) | `--mode gigs --minutes 55`, which covers about 3 gig cycles an hour |
+| **Gem hunt** | `CRON_TZ=Africa/Lagos 5 0 * * *` | `--mode gem` |
+| **Work shift** | none | Handled inside the gigs run: from 08:00, "Go automatically" sends the sim to work, so it isn't a separate Routine |
 
-Prompt, for either one: *"Run the lagoslife-free-tasks skill in `<mode>` mode. Never spend, buy, bet, top up, send or withdraw. Report the reward, or why nothing was earned."*
+The gigs schedule leaves 23:00–07:00 for the sim to sleep and recover. Hourly is the shortest interval a Routine allows. Each fire keeps a session busy for about 55 minutes, which counts toward usage.
 
 ## Open questions and risks
+
+0. Gig pay is **play money**, like everything else in the game. Can't be withdrawn.
 
 1. **Does a shift finish if the page closes partway through?** The game catches up on time missed while away for businesses, but I haven't confirmed it does that for shifts. The plan keeps the page open for the whole 60 minutes to be safe.
 2. **Matching the gem clue to a venue** is the fragile step. If Claude isn't confident, the run should stop and report the clue rather than guess.
