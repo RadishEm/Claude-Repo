@@ -48,9 +48,10 @@ const VENUES = {
 };
 // Free home actions used to keep needs up between gigs. Card labels are matched loosely.
 const NEED_FIXES = {
-  energy: { object: 'Spring Bed', card: /nap|sleep/i },
-  bladder: { object: 'WC Toilet', card: /toilet|wee|use/i },
-  hygiene: { object: 'Rain Shower', card: /shower|bath/i },
+  hunger: { object: 'Gas Cooker', card: /Indomie & Egg|Fry Dodo|Cook Jollof|Titus Stew/ }, // free from the pantry
+  energy: { object: 'Spring Bed', card: /Take a Nap/ },
+  bladder: { object: 'WC Toilet', card: /Use Toilet/ },
+  hygiene: { object: 'Rain Shower', card: /Shower/ },
   fun: { object: 'Laptop Desk', card: /scroll naija twitter/i },
   social: { self: true, card: /call mummy/i },
 };
@@ -204,8 +205,8 @@ async function openSelfSheet(page) {
 }
 
 // Click one action card in the open sheet. Returns 'ok' | 'resting' | 'missing' | 'locked'.
-async function clickCard(page, label) {
-  const card = page.locator('[role=dialog] button').filter({ hasText: label }).first();
+async function clickCard(page, label, root = page.locator('[role=dialog]')) {
+  const card = root.locator('button').filter({ hasText: label }).filter({ hasNotText: /Risky/ }).first();
   if (!(await card.count())) return 'missing';
   const text = (await card.innerText()).replace(/\s+/g, ' ');
   if (/Back in/.test(text)) return 'resting';
@@ -217,11 +218,17 @@ async function clickCard(page, label) {
 // Run one gig end to end and report what it paid.
 async function runGig(page, gig) {
   const before = await waitIdle(page);
-  const opened = gig.where === 'self'
-    ? await openSelfSheet(page)
-    : await openSheet(page, objectMatcher(gig.object), before.location);
+  let opened, root;
+  if (gig.where === 'self') opened = await openSelfSheet(page);
+  else if (gig.where === 'home') opened = await openSheet(page, objectMatcher(gig.object), before.location);
+  else {
+    // Venues list their stations as buttons along the bottom; tapping one shows its action cards inline.
+    const chip = page.getByRole('button', { name: new RegExp(`^\\W*${gig.object}$`) }).first();
+    opened = (await chip.count()) > 0;
+    if (opened) { await chip.click(); await sleep(1200); root = page.locator('body'); }
+  }
   if (!opened) { log(`could not find ${gig.object || 'your Sim'} on screen`); await shot(page, `notfound-${gig.id}`); return null; }
-  const res = await clickCard(page, gig.label);
+  const res = await clickCard(page, gig.label, root);
   if (res !== 'ok') { log(`${gig.label}: ${res}`); await closeDialogs(page); return res; }
   await sleep(800);
   await closeDialogs(page);
@@ -249,14 +256,17 @@ async function fixNeeds(page) {
     log(`${need} is low (${Math.round(g.needs[need])}), topping up`);
     const ok = fix.self ? await openSelfSheet(page) : await openSheet(page, objectMatcher(fix.object), 'home');
     if (!ok) continue;
-    const card = page.locator('[role=dialog] button').filter({ hasText: fix.card }).first();
-    if ((await card.count()) && !/Back in|₦/.test(await card.innerText())) await card.click();
+    // Only free cards: skip anything priced, resting, or needing ingredients we don't have.
+    const card = page.locator('[role=dialog] button').filter({ hasText: fix.card }).filter({ hasNotText: /Back in|₦|Need |Chowdeck/ }).first();
+    if (await card.count()) await card.click(); else log(`no free way to fix ${need} right now`);
     await sleep(800); await closeDialogs(page);
     await waitIdle(page);
   }
 }
 
 // ---------- travel (always on foot: Trek is free) ----------
+// A Ride destination's name starts with its emoji then the venue name (unlike "Share a link to …").
+const rideButton = (page, name) => page.getByRole('button', { name: new RegExp(`^\\W*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`) }).first();
 async function pickTrekAndGo(page) {
   await page.getByRole('button', { name: /Trek/ }).first().click({ timeout: 10000 });
   await sleep(400);
@@ -280,7 +290,7 @@ async function travelTo(page, venueId) {
     await sleep(1000);
     await page.getByText('Ride', { exact: true }).click();
     await sleep(1200);
-    await page.getByRole('button', { name: new RegExp(VENUES[venueId].name) }).first().click();
+    await rideButton(page, VENUES[venueId].name).click();
     await sleep(1200);
     await pickTrekAndGo(page);
   }
@@ -362,7 +372,7 @@ async function gemClue(page) {
   const hunt = await (await page.request.get(`${SITE}/api/hunt`)).json();
   await page.getByRole('button', { name: 'Phone' }).click(); await sleep(1000);
   await page.getByText('Ride', { exact: true }).click(); await sleep(1500);
-  const venues = await page.locator('[role=dialog] button').evaluateAll((bs) => bs.map((b) => b.innerText.split('\n').filter(Boolean)).filter((l) => l.length >= 3).map((l) => `${l[1]} — ${l[2]}`));
+  const venues = await page.getByRole('button').evaluateAll((bs) => bs.map((b) => b.innerText.split('\n').map((x) => x.trim()).filter(Boolean)).filter((l) => l.length >= 3 && l[2].length > 25).map((l) => `${l[1]} — ${l[2]}`));
   await closeDialogs(page);
   console.log(JSON.stringify({ clue: hunt.clue, alreadyFound: !!hunt.mine, nextReward: hunt.nextReward, resetsAt: new Date(hunt.endsAt).toISOString(), venues }, null, 2));
 }
@@ -373,19 +383,23 @@ async function gem(page) {
   const hunt = await (await page.request.get(`${SITE}/api/hunt`)).json();
   if (hunt.mine) return log(`gem already found today (rank #${hunt.mine.rank}, ${naira(hunt.mine.reward)})`);
   await waitIdle(page);
-  log(`clue: ${hunt.clue} → trekking to ${venue}`);
-  await page.getByRole('button', { name: 'Phone' }).click(); await sleep(1000);
-  await page.getByText('Ride', { exact: true }).click(); await sleep(1500);
-  await page.getByRole('button', { name: new RegExp(venue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).first().click(); await sleep(1200);
-  await pickTrekAndGo(page);
   const pick = page.getByRole('button', { name: /Tap to pick it up/ });
+  // The game re-checks the hunt every ~25 s at a venue, so give it time to show the button.
+  if (await pick.waitFor({ timeout: 35000 }).then(() => true, () => false)) log(`clue: ${hunt.clue} → already at the gem`);
+  else {
+    log(`clue: ${hunt.clue} → trekking to ${venue}`);
+    await page.getByRole('button', { name: 'Phone' }).click(); await sleep(1000);
+    await page.getByText('Ride', { exact: true }).click(); await sleep(1500);
+    await rideButton(page, venue).click(); await sleep(1200);
+    await pickTrekAndGo(page);
+  }
   try {
     await pick.waitFor({ timeout: 20 * 60000 });
   } catch {
     log(`no gem at ${venue} — wrong guess?`); await shot(page, 'gem-miss');
     process.exitCode = 3; return;
   }
-  await pick.click();
+  await pick.click({ force: true }); // it pulses, so it's never "stable"
   await sleep(4000);
   const after = await (await page.request.get(`${SITE}/api/hunt`)).json();
   log(after.mine ? `💎 gem claimed: rank #${after.mine.rank}, ${naira(after.mine.reward)}` : 'claim did not register');
