@@ -1,0 +1,6 @@
+{
+  "name": "lagoslife-free-tasks",
+  "private": true,
+  "description": "Playwright automation for Lagos Life free gigs, gem hunt and shifts",
+  "dependencies": { "playwright": "1.63.0" }
+}
