@@ -29,6 +29,7 @@ const opt = (name, dflt) => {
 const MINUTES = Number(opt('minutes', 55));
 const RESELL_PER_RUN = Number(opt('resell-per-run', 3));
 const HOME_ONLY = !!opt('home-only', false);
+const ACTIVE_WINDOW_MIN = Number(opt('active-window', 3));
 
 // ---------- gigs ----------
 // where: 'home' object, a venue station, or 'self' (tap your Sim; works anywhere).
@@ -128,6 +129,12 @@ async function login(page) {
   await cont.waitFor({ timeout: 30000 });
   await page.context().storageState({ path: SESSION_FILE });
   fs.chmodSync(SESSION_FILE, 0o600);
+  // Don't fight a human: if the cloud save changed in the last few minutes, someone is playing.
+  if ((MODE === 'gigs' || MODE === 'gem') && !opt('force', false)) {
+    const j = await (await page.request.get(`${SITE}/api/save`)).json().catch(() => null);
+    const idleMin = j?.updatedAt && j?.now ? (j.now - j.updatedAt) / 60000 : Infinity;
+    if (idleMin < ACTIVE_WINDOW_MIN) throw Object.assign(new Error(`account was active ${idleMin.toFixed(1)} min ago; someone is playing, skipping this run (--force overrides)`), { skip: true });
+  }
   await cont.click();
   await page.waitForFunction(() => { try { return JSON.parse(localStorage.getItem('lagos-life-save')).state.game.phase === 'play'; } catch { return false; } }, null, { timeout: 60000 });
   await sleep(5000); // let the 3D scene settle
@@ -402,6 +409,7 @@ async function gem(page) {
     else throw new Error(`unknown mode ${MODE}`);
     if (MODE !== 'status' && MODE !== 'gem-clue') await flushSave(page);
   } catch (e) {
+    if (e.skip) { log(e.message); return; }
     const pass = process.env.LAGOSLIFE_PASSWORD;
     log('ERROR', pass ? String(e.message).split(pass).join('***') : e.message, '→', await shot(page, 'error'));
     process.exitCode = 1;
