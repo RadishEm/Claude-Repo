@@ -5,6 +5,10 @@ description: Run the free money-earning tasks in the Lagos Life game (lagoslife.
 
 # Lagos Life free tasks
 
+**Earning only.** This skill does gigs and the gem hunt, plus walking between venues when a gig needs it.
+It doesn't play the game otherwise. No eating, sleeping, showering or other upkeep: that's the user's to do.
+If a gig won't start because the Sim's needs are too low, report it. Don't fix it.
+
 Lagos Life ₦ is **play money**: it can't be withdrawn. Real money only goes in, through "Top up wallet".
 This skill only earns. It never pays for anything except the ₦800 Balogun resell stake.
 
@@ -23,9 +27,9 @@ The script masks it in errors and caches the session cookie in `$TMPDIR/lagoslif
 | Command | What it does |
 |---|---|
 | `node lagoslife.js status` | Read-only: balance, location, needs, skills, gig cooldowns, today's gem clue |
-| `node lagoslife.js gigs --minutes 55 --resell-per-run 3` | Loops gigs until time is up, then walks home and confirms the cloud save |
+| `node lagoslife.js gigs --minutes 55 --resell-per-run 3` | Loops gigs until time is up, then confirms the cloud save |
 | `node lagoslife.js gem-clue` | Prints today's gem clue, whether it's already found, and every Ride destination |
-| `node lagoslife.js gem --venue "<Ride destination name>"` | Treks there, waits for "Tap to pick it up", claims, then walks home |
+| `node lagoslife.js gem --venue "<Ride destination name>"` | Treks there, waits for "Tap to pick it up", claims |
 
 Other flags:
 - `--home-only`: skip CcHub and Balogun.

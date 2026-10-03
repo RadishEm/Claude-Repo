@@ -46,16 +46,6 @@ const VENUES = {
   yabaHub: { name: 'CcHub', open: [8, 23] },
   balogun: { name: 'Balogun Market', open: [0, 24] },
 };
-// Free home actions used to keep needs up between gigs. Card labels are matched loosely.
-const NEED_FIXES = {
-  hunger: { object: 'Gas Cooker', card: /Indomie & Egg|Fry Dodo|Cook Jollof|Titus Stew/ }, // free from the pantry
-  energy: { object: 'Spring Bed', card: /Take a Nap/ },
-  bladder: { object: 'WC Toilet', card: /Use Toilet/ },
-  hygiene: { object: 'Rain Shower', card: /Shower/ },
-  fun: { object: 'Laptop Desk', card: /scroll naija twitter/i },
-  social: { self: true, card: /call mummy/i },
-};
-const NEED_LOW = 35;
 
 // ---------- safety: only these writes may leave the browser ----------
 const WRITE_ALLOW = [
@@ -248,22 +238,6 @@ async function runGig(page, gig) {
   return null;
 }
 
-async function fixNeeds(page) {
-  const g = await waitIdle(page);
-  if (g.location !== 'home') return;
-  for (const [need, fix] of Object.entries(NEED_FIXES)) {
-    if ((g.needs?.[need] ?? 100) >= NEED_LOW) continue;
-    log(`${need} is low (${Math.round(g.needs[need])}), topping up`);
-    const ok = fix.self ? await openSelfSheet(page) : await openSheet(page, objectMatcher(fix.object), 'home');
-    if (!ok) continue;
-    // Only free cards: skip anything priced, resting, or needing ingredients we don't have.
-    const card = page.locator('[role=dialog] button').filter({ hasText: fix.card }).filter({ hasNotText: /Back in|₦|Need |Chowdeck/ }).first();
-    if (await card.count()) await card.click(); else log(`no free way to fix ${need} right now`);
-    await sleep(800); await closeDialogs(page);
-    await waitIdle(page);
-  }
-}
-
 // ---------- travel (always on foot: Trek is free) ----------
 // A Ride destination's name starts with its emoji then the venue name (unlike "Share a link to …").
 const rideButton = (page, name) => page.getByRole('button', { name: new RegExp(`^\\W*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`) }).first();
@@ -337,9 +311,7 @@ async function gigs(page) {
   const usable = (gig) => gig.where === 'self' || gig.where === 'home' || (!HOME_ONLY && isOpen(gig.where));
 
   while (Date.now() < deadline - 60000) {
-    let g = await waitIdle(page, deadline - Date.now());
-    await fixNeeds(page);
-    g = await game(page);
+    const g = await waitIdle(page, deadline - Date.now());
     const here = GIGS.filter((x) => usable(x) && at(g, x) && ready(g, x));
     if (here.length) {
       for (const gig of here) {
@@ -362,8 +334,6 @@ async function gigs(page) {
     log(`nothing ready; waiting ${Math.ceil(waitMs / 60000)} min`);
     await sleep(waitMs);
   }
-  // Head home so the next run starts at the laptop.
-  if (!HOME_ONLY && (await game(page)).location !== 'home') await travelTo(page, 'home').catch((e) => log('could not get home:', e.message));
   const g = await game(page);
   log(`SUMMARY gigs=${done.length} [${done.join(', ')}] earned=${naira(total)} balance=${naira(g.money)}${blocked.length ? ` blocked=${blocked.length}` : ''}`);
 }
@@ -403,8 +373,6 @@ async function gem(page) {
   await sleep(4000);
   const after = await (await page.request.get(`${SITE}/api/hunt`)).json();
   log(after.mine ? `💎 gem claimed: rank #${after.mine.rank}, ${naira(after.mine.reward)}` : 'claim did not register');
-  await sleep(2000);
-  await travelTo(page, 'home').catch(() => {});
 }
 
 (async () => {
