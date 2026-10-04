@@ -417,11 +417,14 @@ async function spray(page) {
   const here = (await game(page)).location;
   if (here !== 'clubEko') await travelTo(page, 'clubEko');
   log('watching the Quilox floor for sprays');
-  const note = page.getByRole('button', { name: 'Pick up money' });
+  // Notes fall and spin, so a mouse tap misses. Press each note's own button instead (same as a tap).
   while (Date.now() < deadline && isOpen('clubEko')) {
-    const n = await note.count();
-    for (let i = 0; i < n; i++) await note.first().click({ force: true, timeout: 2000 }).catch(() => {});
-    await sleep(n ? 150 : 400);
+    const n = await page.evaluate(() => {
+      const bs = [...document.querySelectorAll('[aria-label="Pick up money"]')];
+      bs.forEach((b, i) => setTimeout(() => b.click(), i * 120)); // one at a time, like fingers
+      return bs.length;
+    }).catch(() => 0);
+    await sleep(n ? n * 120 + 400 : 400);
   }
   log(`SUMMARY sprays=${sprays} notes=${notes} picked=${naira(picked)} capped=${capped} missed=${gone} (money is pending until your app or a gigs run claims it)`);
 }
