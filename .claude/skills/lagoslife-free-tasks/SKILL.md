@@ -40,6 +40,7 @@ The script masks it in errors and caches the session cookie in `$TMPDIR/lagoslif
 | `node lagoslife.js gigs --minutes 55 --resell-per-run 3` | Loops gigs until time is up, then confirms the cloud save |
 | `node lagoslife.js gem-clue` | Prints today's gem clue, whether it's already found, and every Ride destination |
 | `node lagoslife.js gem --venue "<Ride destination name>"` | Treks there, waits for "Tap to pick it up", claims |
+| `node lagoslife.js spray --minutes 54` | Sits at Quilox (open 22:00–05:00 Lagos) and picks up notes when other players spray. Never saves the game or claims money |
 
 Other flags:
 - `--home-only`: skip CcHub and Balogun.
@@ -83,6 +84,21 @@ Exit codes: 0 ok · 1 error (screenshot in `scripts/out/`) · 2 cloud save not c
 - **Travel:** Phone → Ride → venue → **Trek** (free) → Go. The script refuses any Go button that shows ₦.
 - **Job shift:** handled by the game. With "Go automatically" on, weekday shifts start between 08:00 and 14:00 while the page is open. Gig runs wait while the Sim is at work.
 
+## Spray catcher (Quilox, night only)
+
+- **When:** Quilox is open 22:00–05:00 Lagos. Players spray there constantly, and sprays reach the client in batches about every 20 seconds.
+- **How it picks:**
+  - The game drops notes on screen for one spray per batch.
+  - The catcher presses each falling note's "Pick up money" button as soon as it appears.
+  - Each player can take about 3 notes per spray, after which the server answers "picked your share".
+- **What it can't control:** which note is worth what. The server decides each note's value when it's picked (₦200 to ₦40k+ seen so far).
+- **Fair play:** it only picks what the game shows on screen, at the game's own timing. Don't make it poll the server faster or pick sprays the game didn't display. Other real players are catching the same notes.
+- **Saving:** spray mode never saves and never claims.
+  - Picked money waits on the server as a pending transfer.
+  - The user's app collects it when it loads, and so does any gigs run.
+  - So spray mode can run while the user is playing.
+  - Only `/api/auth/login`, `/api/visit`, `/api/world` and `/api/spray/pick` are allowed in this mode.
+
 ## Guardrails (in code — don't remove)
 
 - **Write allowlist.** Only these writes go out:
@@ -93,7 +109,7 @@ Exit codes: 0 ok · 1 error (screenshot in `scripts/out/`) · 2 cloud save not c
   - `/api/hunt`
   - `/api/client-error`
   - `/api/family` with `{"action":"claim"}`
-- Everything else is aborted and logged as `BLOCKED`. That covers wallet, send, ads, bail, sea, gov, squads and spray.
+- Everything else is aborted and logged as `BLOCKED`. That covers wallet, send, ads, bail, sea, gov, squads and `/api/spray` (spraying your own money).
 - Third-party requests and popups are blocked.
 - If the page navigates off the site, for example to a payment page, the run stops.
 - Crime actions are never in the gig list.
