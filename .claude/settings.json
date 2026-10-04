@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd .claude/skills/lagoslife-free-tasks/scripts && npm ci --silent)",
+      "Bash(npm ci --silent)",
+      "Bash(node lagoslife.js status)",
+      "Bash(node lagoslife.js spray:*)",
+      "Bash(node lagoslife.js gigs:*)",
+      "Bash(node lagoslife.js gem-clue)",
+      "Bash(node lagoslife.js gem:*)"
+    ]
+  }
+}
