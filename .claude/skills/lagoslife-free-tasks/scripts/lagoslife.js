@@ -46,6 +46,7 @@ const GIGS = [
 const VENUES = {
   yabaHub: { name: 'CcHub', open: [8, 23] },
   balogun: { name: 'Balogun Market', open: [0, 24] },
+  clubEko: { name: 'Quilox', open: [22, 5] }, // overnight
 };
 
 // Free home actions used to keep needs up between gigs. Card labels are matched loosely.
@@ -69,12 +70,19 @@ const WRITE_ALLOW = [
   /\/api\/client-error$/,
 ];
 const blocked = [];
+// Spray mode only watches: it may tell the server where it is (/api/world) and pick notes, nothing else.
+// Picked money waits on the server until a normal client (your app or a gigs run) claims and saves it.
+const SPRAY_ALLOW = [/\/api\/auth\/login$/, /\/api\/visit$/, /\/api\/world$/, /\/api\/spray\/pick$/, /\/api\/client-error$/];
 async function guard(context) {
   await context.route('**/*', (route) => {
     const req = route.request();
     const url = new URL(req.url());
     if (req.method() === 'GET' || req.method() === 'HEAD') return route.continue();
     if (url.origin !== SITE || url.pathname.startsWith('/cdn-cgi/')) return route.abort(); // analytics, third parties
+    if (MODE === 'spray') {
+      if (SPRAY_ALLOW.some((re) => re.test(url.pathname))) return route.continue();
+      return route.abort(); // saves and claims are expected here; not worth logging
+    }
     if (url.pathname === '/api/family' && /"action":"claim"/.test(req.postData() || '')) return route.continue(); // app's own auto-claim of gifts
     if (WRITE_ALLOW.some((re) => re.test(url.pathname))) return route.continue();
     blocked.push(`${req.method()} ${url.pathname}`);
@@ -88,7 +96,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const naira = (n) => `₦${Math.round(n).toLocaleString('en-NG')}`;
 const lagosHour = () => Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Lagos', hour: 'numeric', hour12: false }).format(new Date())) % 24;
-const isOpen = (venueId) => { const v = VENUES[venueId]; if (!v) return true; const h = lagosHour(); return h >= v.open[0] && h < v.open[1]; };
+const isOpen = (venueId) => {
+  const v = VENUES[venueId]; if (!v) return true;
+  const h = lagosHour(), [a, b] = v.open;
+  return a < b ? h >= a && h < b : h >= a || h < b; // b < a means it closes after midnight
+};
 
 async function shot(page, name) {
   fs.mkdirSync(OUT, { recursive: true });
@@ -385,6 +397,35 @@ async function gigs(page) {
   log(`SUMMARY gigs=${done.length} [${done.join(', ')}] earned=${naira(total)} balance=${naira(g.money)}${blocked.length ? ` blocked=${blocked.length}` : ''}`);
 }
 
+// Sit at Quilox and pick up every note when someone sprays.
+async function spray(page) {
+  if (!isOpen('clubEko')) return log('Quilox is closed (opens 22:00 Lagos); nothing to watch');
+  const deadline = Date.now() + MINUTES * 60000;
+  let picked = 0, notes = 0, sprays = 0, capped = 0, gone = 0;
+  page.on('response', async (res) => {
+    const u = res.url();
+    if (u.endsWith('/api/spray/pick')) {
+      const j = await res.json().catch(() => ({}));
+      if (j.amount) { picked += j.amount; notes++; log(`💵 picked ${naira(j.amount)} (total ${naira(picked)})`); }
+      else if (j.limit) capped++;
+      else if (j.gone) gone++;
+    } else if (u.endsWith('/api/world')) {
+      const j = await res.json().catch(() => null);
+      for (const e of j?.events ?? []) if (e.spray && !e.mine) { sprays++; log(`🎊 @${e.username} is spraying (${e.spray.notes ?? '?'} notes)`); }
+    }
+  });
+  const here = (await game(page)).location;
+  if (here !== 'clubEko') await travelTo(page, 'clubEko');
+  log('watching the Quilox floor for sprays');
+  const note = page.getByRole('button', { name: 'Pick up money' });
+  while (Date.now() < deadline && isOpen('clubEko')) {
+    const n = await note.count();
+    for (let i = 0; i < n; i++) await note.first().click({ force: true, timeout: 2000 }).catch(() => {});
+    await sleep(n ? 150 : 400);
+  }
+  log(`SUMMARY sprays=${sprays} notes=${notes} picked=${naira(picked)} capped=${capped} missed=${gone} (money is pending until your app or a gigs run claims it)`);
+}
+
 async function gemClue(page) {
   const hunt = await (await page.request.get(`${SITE}/api/hunt`)).json();
   await openPhone(page);
@@ -435,8 +476,9 @@ async function gem(page) {
     else if (MODE === 'gigs') await gigs(page);
     else if (MODE === 'gem-clue') await gemClue(page);
     else if (MODE === 'gem') await gem(page);
+    else if (MODE === 'spray') await spray(page);
     else throw new Error(`unknown mode ${MODE}`);
-    if (MODE !== 'status' && MODE !== 'gem-clue') await flushSave(page);
+    if (MODE === 'gigs' || MODE === 'gem') await flushSave(page); // spray mode never saves
   } catch (e) {
     if (e.skip) { log(e.message); return; }
     if (MODE === 'gigs' || MODE === 'gem') await flushSave(page).catch(() => {});
