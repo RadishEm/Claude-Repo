@@ -267,6 +267,16 @@ async function fixNeeds(page) {
 }
 
 // ---------- travel (always on foot: Trek is free) ----------
+async function openPhone(page) {
+  const phone = page.getByRole('button', { name: 'Phone' });
+  for (let i = 0; i < 2; i++) {
+    await closeDialogs(page);
+    await page.keyboard.press('Escape').catch(() => {});
+    if (await phone.isVisible().catch(() => false)) { await phone.click(); await sleep(1000); return; }
+    await sleep(10000);
+  }
+  throw Object.assign(new Error('Phone button not available (a human may have taken over the game)'), { takeover: true });
+}
 // A Ride destination's name starts with its emoji then the venue name (unlike "Share a link to …").
 const rideButton = (page, name) => page.getByRole('button', { name: new RegExp(`^\\W*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`) }).first();
 async function pickTrekAndGo(page) {
@@ -288,8 +298,7 @@ async function travelTo(page, venueId) {
     await sleep(800);
     if (await page.getByRole('button', { name: /Trek/ }).count()) await pickTrekAndGo(page);
   } else {
-    await page.getByRole('button', { name: 'Phone' }).click();
-    await sleep(1000);
+    await openPhone(page);
     await page.getByText('Ride', { exact: true }).click();
     await sleep(1200);
     await rideButton(page, VENUES[venueId].name).click();
@@ -330,7 +339,7 @@ async function status(page) {
 
 async function gigs(page) {
   const deadline = Date.now() + MINUTES * 60000;
-  let total = 0, resells = 0;
+  let total = 0, resells = 0, lastMoney = null;
   const done = [];
   const ready = (g, gig) => (g.gigRest?.[gig.id] ?? 0) <= g.time
     && !(gig.id === 'resell' && resells >= RESELL_PER_RUN)
@@ -340,15 +349,21 @@ async function gigs(page) {
     || (!HOME_ONLY && !(SKIP_CCHUB && gig.where === 'yabaHub') && isOpen(gig.where));
 
   while (Date.now() < deadline - 60000) {
-    await waitIdle(page, deadline - Date.now());
+    const idle = await waitIdle(page, deadline - Date.now());
+    if (lastMoney !== null && idle.money !== lastMoney) {
+      log(`balance changed from ${naira(lastMoney)} to ${naira(idle.money)} without a gig; someone else is playing, stopping this run`);
+      break;
+    }
     await fixNeeds(page); // keep the Sim able to work: free home top-ups only
     const g = await game(page);
+    lastMoney = g.money;
     const here = GIGS.filter((x) => usable(x) && at(g, x) && ready(g, x));
     if (here.length) {
       for (const gig of here) {
         if (Date.now() > deadline - 60000) break;
         const r = await runGig(page, gig);
         if (r?.earned !== undefined) { total += r.earned; done.push(gig.id); if (gig.id === 'resell') resells++; }
+        lastMoney = (await game(page)).money;
       }
       continue;
     }
@@ -357,6 +372,7 @@ async function gigs(page) {
     if (elsewhere.length) {
       const dest = elsewhere.some((x) => x.where === 'home') ? 'home' : elsewhere[0].where;
       await travelTo(page, dest);
+      lastMoney = (await game(page)).money;
       continue;
     }
     const next = Math.min(...GIGS.filter(usable).map((x) => (g.gigRest?.[x.id] ?? 0) - g.time).filter((m) => m > 0));
@@ -371,7 +387,7 @@ async function gigs(page) {
 
 async function gemClue(page) {
   const hunt = await (await page.request.get(`${SITE}/api/hunt`)).json();
-  await page.getByRole('button', { name: 'Phone' }).click(); await sleep(1000);
+  await openPhone(page);
   await page.getByText('Ride', { exact: true }).click(); await sleep(1500);
   const venues = await page.getByRole('button').evaluateAll((bs) => bs.map((b) => b.innerText.split('\n').map((x) => x.trim()).filter(Boolean)).filter((l) => l.length >= 3 && l[2].length > 25).map((l) => `${l[1]} — ${l[2]}`));
   await closeDialogs(page);
@@ -389,7 +405,7 @@ async function gem(page) {
   if (await pick.waitFor({ timeout: 35000 }).then(() => true, () => false)) log(`clue: ${hunt.clue} → already at the gem`);
   else {
     log(`clue: ${hunt.clue} → trekking to ${venue}`);
-    await page.getByRole('button', { name: 'Phone' }).click(); await sleep(1000);
+    await openPhone(page);
     await page.getByText('Ride', { exact: true }).click(); await sleep(1500);
     await rideButton(page, venue).click(); await sleep(1200);
     await pickTrekAndGo(page);
@@ -423,6 +439,7 @@ async function gem(page) {
     if (MODE !== 'status' && MODE !== 'gem-clue') await flushSave(page);
   } catch (e) {
     if (e.skip) { log(e.message); return; }
+    if (MODE === 'gigs' || MODE === 'gem') await flushSave(page).catch(() => {});
     const pass = process.env.LAGOSLIFE_PASSWORD;
     log('ERROR', pass ? String(e.message).split(pass).join('***') : e.message, '→', await shot(page, 'error'));
     process.exitCode = 1;
