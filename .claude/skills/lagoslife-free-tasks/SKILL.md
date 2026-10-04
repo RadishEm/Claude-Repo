@@ -33,6 +33,7 @@ The script masks it in errors and caches the session cookie in `$TMPDIR/lagoslif
 
 Other flags:
 - `--home-only`: skip CcHub and Balogun.
+- `--skip-cchub`: skip CcHub only (its freelance gig and the pitch).
 - `--resell-per-run 0`: never spend the ₦800 stake.
 - `--active-window 3`: skip the run if the account's save changed within this many minutes, meaning someone is playing.
 - `--force`: ignore the active-player check.

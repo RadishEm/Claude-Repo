@@ -29,6 +29,7 @@ const opt = (name, dflt) => {
 const MINUTES = Number(opt('minutes', 55));
 const RESELL_PER_RUN = Number(opt('resell-per-run', 3));
 const HOME_ONLY = !!opt('home-only', false);
+const SKIP_CCHUB = !!opt('skip-cchub', false);
 const ACTIVE_WINDOW_MIN = Number(opt('active-window', 3));
 
 // ---------- gigs ----------
@@ -308,7 +309,8 @@ async function gigs(page) {
     && !(gig.id === 'resell' && resells >= RESELL_PER_RUN)
     && (gig.spends ? g.money >= gig.spends + 5000 : true);
   const at = (g, gig) => (gig.where === 'self' ? g.location === 'home' : gig.where === g.location);
-  const usable = (gig) => gig.where === 'self' || gig.where === 'home' || (!HOME_ONLY && isOpen(gig.where));
+  const usable = (gig) => gig.where === 'self' || gig.where === 'home'
+    || (!HOME_ONLY && !(SKIP_CCHUB && gig.where === 'yabaHub') && isOpen(gig.where));
 
   while (Date.now() < deadline - 60000) {
     const g = await waitIdle(page, deadline - Date.now());
