@@ -5,9 +5,19 @@ description: Run the free money-earning tasks in the Lagos Life game (lagoslife.
 
 # Lagos Life free tasks
 
-**Earning only.** This skill does gigs and the gem hunt, plus walking between venues when a gig needs it.
-It doesn't play the game otherwise. No eating, sleeping, showering or other upkeep: that's the user's to do.
-If a gig won't start because the Sim's needs are too low, report it. Don't fix it.
+**Earning first.** This skill does gigs and the gem hunt, plus walking between venues when a gig needs it.
+The only other thing it does is keep the Sim able to work. When it's at home and a need drops below 35, it uses one free action:
+
+| Need | Free action |
+|---|---|
+| Hunger | Indomie & Egg (from the pantry) |
+| Energy | Take a Nap |
+| Hygiene | Shower |
+| Bladder | Use Toilet |
+| Fun | Scroll Naija Twitter |
+| Social | Call Mummy |
+
+It never orders groceries or buys anything to do this. Leave upkeep to the script; don't click anything yourself.
 
 Lagos Life ₦ is **play money**: it can't be withdrawn. Real money only goes in, through "Top up wallet".
 This skill only earns. It never pays for anything except the ₦800 Balogun resell stake.

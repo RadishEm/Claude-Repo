@@ -48,6 +48,17 @@ const VENUES = {
   balogun: { name: 'Balogun Market', open: [0, 24] },
 };
 
+// Free home actions used to keep needs up between gigs. Card labels are matched loosely.
+const NEED_FIXES = {
+  hunger: { object: 'Gas Cooker', card: /Indomie & Egg|Fry Dodo|Cook Jollof|Titus Stew/ }, // free from the pantry
+  energy: { object: 'Spring Bed', card: /Take a Nap/ },
+  bladder: { object: 'WC Toilet', card: /Use Toilet/ },
+  hygiene: { object: 'Rain Shower', card: /Shower/ },
+  fun: { object: 'Laptop Desk', card: /scroll naija twitter/i },
+  social: { self: true, card: /call mummy/i },
+};
+const NEED_LOW = 35;
+
 // ---------- safety: only these writes may leave the browser ----------
 const WRITE_ALLOW = [
   /\/api\/auth\/login$/,
@@ -239,6 +250,22 @@ async function runGig(page, gig) {
   return null;
 }
 
+async function fixNeeds(page) {
+  const g = await waitIdle(page);
+  if (g.location !== 'home') return;
+  for (const [need, fix] of Object.entries(NEED_FIXES)) {
+    if ((g.needs?.[need] ?? 100) >= NEED_LOW) continue;
+    log(`${need} is low (${Math.round(g.needs[need])}), topping up`);
+    const ok = fix.self ? await openSelfSheet(page) : await openSheet(page, objectMatcher(fix.object), 'home');
+    if (!ok) continue;
+    // Only free cards: skip anything priced, resting, or needing ingredients we don't have.
+    const card = page.locator('[role=dialog] button').filter({ hasText: fix.card }).filter({ hasNotText: /Back in|₦|Need |Chowdeck/ }).first();
+    if (await card.count()) await card.click(); else log(`no free way to fix ${need} right now`);
+    await sleep(800); await closeDialogs(page);
+    await waitIdle(page);
+  }
+}
+
 // ---------- travel (always on foot: Trek is free) ----------
 // A Ride destination's name starts with its emoji then the venue name (unlike "Share a link to …").
 const rideButton = (page, name) => page.getByRole('button', { name: new RegExp(`^\\W*${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`) }).first();
@@ -313,7 +340,9 @@ async function gigs(page) {
     || (!HOME_ONLY && !(SKIP_CCHUB && gig.where === 'yabaHub') && isOpen(gig.where));
 
   while (Date.now() < deadline - 60000) {
-    const g = await waitIdle(page, deadline - Date.now());
+    await waitIdle(page, deadline - Date.now());
+    await fixNeeds(page); // keep the Sim able to work: free home top-ups only
+    const g = await game(page);
     const here = GIGS.filter((x) => usable(x) && at(g, x) && ready(g, x));
     if (here.length) {
       for (const gig of here) {
