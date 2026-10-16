@@ -70,3 +70,32 @@ The script uses only the Python standard library. It submits the job, polls unti
 2. Run the same prompt through `sd-2-lower` (5s, about 5 credits) and `seedance-2-omni fast-vip` (5s, about 135 credits) and compare quality.
 3. Make one `veo-3.1-fast` video (4 credits) and one `nano-banana-pro` image (3 credits).
 4. Run `account` again to confirm the actual charges match this table.
+
+## Higgsfield's current plans and model coverage (checked 2026-10-16)
+
+higgsfield.ai/pricing no longer lists a "Pro $29 / 600 credits" plan. Monthly prices on the page today:
+
+| Plan | Price/mo (monthly / annual) | Credits/mo | $ per credit (monthly) | Model access |
+|---|---|---|---|---|
+| Starter | $19 / $19 | 270 | $0.070 | Selected models only (Seedance 2.0 Fast & Mini; no full Seedance 2.0, Sora, Veo 3.1 etc.) |
+| Plus | $59 / $47 | 1,200 | $0.049 | All models |
+| Ultra | $129 / $99 | 3,000 (6k/9k options) | $0.043 | All models |
+| Teams | from $65/seat | 1,000/seat | — | All models + 30-day unlimited Seedance 2.5 |
+
+"Unlimited" and free generations are web-only and do not apply via MCP/CLI.
+
+Cost per generation (Higgsfield Plus monthly vs SnapGen at the bonus rate; SnapGen normal rate is ×2):
+
+| Generation | Higgsfield credits | Higgsfield Plus | SnapGen |
+|---|---|---|---|
+| Seedance 2.0 720p, 5s | ~22 | $1.08 (not on Starter) | $0.68 Omni Fast VIP · $0.88 Pro VIP |
+| Seedance 2.0 Fast/Mini 720p, 5s | ~12 | $0.59 | $0.53 Mini · $0.025 Lower |
+| Veo 3.1 Fast, 8s | ~32 | $1.57 | $0.02 |
+| Veo 3.1, 8s | ~80 | $3.93 | $0.50 |
+| Kling 3.0 720p, 5s | ~7 | $0.34 | $0.28 (Omni Standard) |
+| Grok Video, ~6s | ~7/5s | ~$0.34 | $0.135 (720p 6s) |
+| Nano Banana Pro image | 2 | $0.098 | $0.015 |
+
+On both sides: Seedance 2.0/2.5, Kling 3.0/2.6/2.5/2.1 + Motion Control, Veo 3.1, Grok Video, Nano Banana Pro/2, GPT Image.
+Higgsfield only: Sora 2 (all variants), Wan 2.2–3.0, Seedream, Hailuo 2.3/02, Seedance 1.5/Pro, Veo 3, Kling Omni 1, FLUX.2/Flux Kontext, Reve, and Higgsfield's own tools (Soul, DoP, Popcorn, Face/Character Swap, AI Influencer, Ads Studio, Cinema Studio).
+SnapGen only: Veo 2, Omni Flash, Grok 1.5 Lite, Grok Image, Vela AI, Minimax H3, FLUX 3, logo removal, Seedance "Lower" tiers.
